@@ -344,4 +344,80 @@ class FacebookController extends Controller
             return redirect()->back()->with('error', 'Failed to refresh Facebook data. Please try again.');
         }
     }
+
+    /**
+     * Alternative Facebook callback handler for /home/facebook_login_back route.
+     * This provides backward compatibility or handles different app configurations.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function facebookLoginBack()
+    {
+        Log::info('Facebook login back route accessed', [
+            'route' => '/home/facebook_login_back',
+            'query_params' => request()->all(),
+        ]);
+
+        // Use the same callback logic
+        return $this->callback();
+    }
+
+    /**
+     * Display all Facebook data stored for the authenticated user.
+     * Useful for debugging and verifying data storage.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function showStoredData()
+    {
+        $user = Auth::user();
+
+        if (!$user->isConnectedToFacebook()) {
+            return response()->json([
+                'status' => 'not_connected',
+                'message' => 'No Facebook account connected',
+            ], 404);
+        }
+
+        // Prepare comprehensive Facebook data
+        $facebookData = [
+            'connection_status' => [
+                'connected' => $user->isConnectedToFacebook(),
+                'has_token' => $user->hasFacebookToken(),
+                'token_expired' => $user->isFacebookTokenExpired(),
+                'has_pages' => $user->hasFacebookPages(),
+            ],
+            'user_data' => [
+                'facebook_id' => $user->facebook_id,
+                'profile_picture' => $user->facebook_profile_picture,
+            ],
+            'token_data' => [
+                'has_access_token' => !empty($user->facebook_access_token),
+                'token_expires_at' => $user->facebook_token_expires_at?->toDateTimeString(),
+                'expires_in_days' => $user->facebook_token_expires_at ?
+                    now()->diffInDays($user->facebook_token_expires_at, false) : null,
+                'has_refresh_token' => !empty($user->facebook_refresh_token),
+            ],
+            'pages_data' => [
+                'total_pages' => count($user->getFacebookPages()),
+                'pages' => $user->getFacebookPages(),
+            ],
+            'storage_timestamps' => [
+                'user_created_at' => $user->created_at?->toDateTimeString(),
+                'user_updated_at' => $user->updated_at?->toDateTimeString(),
+                'last_login_at' => $user->last_login_at?->toDateTimeString(),
+            ],
+        ];
+
+        Log::info('Facebook stored data retrieved', [
+            'user_id' => $user->id,
+            'pages_count' => $facebookData['pages_data']['total_pages'],
+            'token_status' => $facebookData['connection_status']['token_expired'] ? 'expired' : 'valid',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $facebookData,
+        ], 200);
+    }
 }

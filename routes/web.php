@@ -82,15 +82,29 @@ Route::get('/forgot-password', function () {
 })->middleware('guest')->name('password.request');
 
 // Facebook Authentication Routes
-Route::get('/auth/facebook', [FacebookController::class, 'login'])->name('facebook.login');
-Route::get('/auth/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
-Route::get('/home/facebook_login_back', [FacebookController::class, 'callback'])->name('facebook.facebook_login_back');
-Route::post('/facebook/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect')->middleware('auth');
-Route::post('/facebook/refresh', [FacebookController::class, 'refreshFacebookData'])->name('facebook.refresh')->middleware('auth');
+Route::prefix('auth')->group(function () {
+    // Initiate Facebook login
+    Route::get('/facebook', [FacebookController::class, 'login'])->name('facebook.login');
+
+    // Standard OAuth callback
+    Route::get('/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
+});
+
+// Alternative Facebook callback (for backward compatibility or different app configurations)
+Route::get('/home/facebook_login_back', [FacebookController::class, 'facebookLoginBack'])->name('facebook.facebook_login_back');
+
+// Facebook management routes (authenticated)
+Route::middleware('auth')->prefix('facebook')->group(function () {
+    Route::post('/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect');
+    Route::post('/refresh', [FacebookController::class, 'refreshFacebookData'])->name('facebook.refresh');
+    Route::get('/me', [FacebookController::class, 'getMe'])->name('facebook.me');
+    Route::get('/stored-data', [FacebookController::class, 'showStoredData'])->name('facebook.stored_data');
+});
 
 // Dashboard Routes
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/facebook/me', [FacebookController::class, 'getMe'])->name('facebook.me');
 });
+
+
 
