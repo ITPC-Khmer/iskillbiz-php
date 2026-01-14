@@ -138,4 +138,93 @@ class FacebookService
             'code' => $e->getCode(),
         ]);
     }
+
+    /**
+     * Exchange short-lived token for long-lived token.
+     *
+     * @param string $accessToken
+     * @return array Contains 'access_token' and 'expires_in'
+     * @throws \Exception
+     */
+    public function getLongLivedToken(string $accessToken): array
+    {
+        try {
+            $oauth2Client = $this->facebook->getOAuth2Client();
+            $longLivedToken = $oauth2Client->getLongLivedAccessToken($accessToken);
+
+            return [
+                'access_token' => (string) $longLivedToken,
+                'expires_in' => $longLivedToken->getExpiresAt() ?
+                    $longLivedToken->getExpiresAt()->getTimestamp() - time() :
+                    5184000, // 60 days default
+            ];
+        } catch (\Exception $e) {
+            Log::error('Failed to get long-lived token', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Get user's Facebook pages.
+     *
+     * @param string $accessToken
+     * @return array
+     * @throws \Facebook\Exceptions\FacebookResponseException
+     */
+    public function getUserPages($accessToken): array
+    {
+        try {
+            $response = $this->facebook->get(
+                '/me/accounts?fields=id,name,access_token,category,tasks,picture{url}',
+                $accessToken
+            );
+
+            $pages = $response->getGraphEdge();
+            $pagesArray = [];
+
+            foreach ($pages as $page) {
+                $pagesArray[] = [
+                    'id' => $page->getField('id'),
+                    'name' => $page->getField('name'),
+                    'access_token' => $page->getField('access_token'),
+                    'category' => $page->getField('category'),
+                    'tasks' => $page->getField('tasks'),
+                    'picture_url' => $page->getField('picture')['url'] ?? null,
+                ];
+            }
+
+            return $pagesArray;
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve Facebook pages', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Debug and inspect access token.
+     *
+     * @param string $accessToken
+     * @return array
+     * @throws \Exception
+     */
+    public function inspectToken(string $accessToken): array
+    {
+        try {
+            $response = $this->facebook->get(
+                '/debug_token?input_token=' . $accessToken,
+                config('services.facebook.app_id') . '|' . config('services.facebook.app_secret')
+            );
+
+            return $response->getDecodedBody()['data'] ?? [];
+        } catch (\Exception $e) {
+            Log::error('Failed to inspect token', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
 }

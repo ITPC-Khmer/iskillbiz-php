@@ -75,12 +75,54 @@ class FacebookController extends Controller
             return redirect()->route('login')->with('error', 'Authentication was cancelled. Please try again.');
         }
 
+        Log::info('Facebook access token retrieved', [
+            'token_length' => strlen((string) $accessToken),
+        ]);
+
+        // Exchange for long-lived token (60 days)
+        try {
+            $longLivedTokenData = $this->facebookService->getLongLivedToken((string) $accessToken);
+            $accessToken = $longLivedTokenData['access_token'];
+            $expiresIn = $longLivedTokenData['expires_in'];
+            $tokenExpiresAt = now()->addSeconds($expiresIn);
+
+            Log::info('Long-lived token obtained', [
+                'expires_in_days' => round($expiresIn / 86400, 1),
+                'expires_at' => $tokenExpiresAt->toDateTimeString(),
+            ]);
+        } catch (\Exception $e) {
+            // Continue with short-lived token if long-lived exchange fails
+            Log::warning('Failed to get long-lived token, using short-lived', [
+                'error' => $e->getMessage(),
+            ]);
+            $tokenExpiresAt = now()->addHours(2); // Short-lived tokens last ~2 hours
+        }
+
         // Get user details from Facebook
         try {
             $fbUserData = $this->facebookService->getUserData($accessToken);
+            Log::info('Facebook user data retrieved', [
+                'facebook_id' => $fbUserData['id'],
+                'email' => $fbUserData['email'] ?? 'no_email',
+            ]);
         } catch (\Exception $e) {
             $this->facebookService->logError($e, 'callback() - getUserData()');
             return redirect()->route('login')->with('error', 'Unable to retrieve user information from Facebook.');
+        }
+
+        // Fetch user's Facebook pages
+        $facebookPages = [];
+        try {
+            $facebookPages = $this->facebookService->getUserPages($accessToken);
+            Log::info('Facebook pages retrieved', [
+                'page_count' => count($facebookPages),
+                'page_ids' => array_column($facebookPages, 'id'),
+            ]);
+        } catch (\Exception $e) {
+            // Non-critical error - continue without pages
+            Log::warning('Failed to retrieve Facebook pages', [
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Find or create user
@@ -100,9 +142,17 @@ class FacebookController extends Controller
                     'last_name' => $nameParts[1] ?? '',
                     'email' => $fbUserData['email'] ?? 'fb_' . $fbUserData['id'] . '@facebook.local',
                     'facebook_id' => $fbUserData['id'],
+                    'facebook_access_token' => $accessToken,
+                    'facebook_token_expires_at' => $tokenExpiresAt,
+                    'facebook_profile_picture' => $fbUserData['picture_url'] ?? null,
+                    'facebook_pages' => $facebookPages,
                     'password' => Hash::make(uniqid()),
                 ]);
-                Log::info('New user created via Facebook', ['user_id' => $user->id, 'facebook_id' => $fbUserData['id']]);
+                Log::info('New user created via Facebook', [
+                    'user_id' => $user->id,
+                    'facebook_id' => $fbUserData['id'],
+                    'has_pages' => !empty($facebookPages),
+                ]);
             } catch (\Exception $e) {
                 Log::error('Failed to create user from Facebook data', [
                     'error' => $e->getMessage(),
@@ -111,10 +161,30 @@ class FacebookController extends Controller
                 return redirect()->route('login')->with('error', 'Failed to create account. Please try again.');
             }
         } else {
-            // Update existing user with Facebook ID if not already set
-            if (!$user->facebook_id) {
-                $user->update(['facebook_id' => $fbUserData['id']]);
-                Log::info('Existing user connected to Facebook', ['user_id' => $user->id]);
+            // Update existing user with Facebook data
+            try {
+                $updateData = [
+                    'facebook_id' => $fbUserData['id'],
+                    'facebook_access_token' => $accessToken,
+                    'facebook_token_expires_at' => $tokenExpiresAt,
+                    'facebook_profile_picture' => $fbUserData['picture_url'] ?? $user->facebook_profile_picture,
+                    'facebook_pages' => $facebookPages,
+                ];
+
+                $user->update($updateData);
+
+                Log::info('Existing user updated with Facebook data', [
+                    'user_id' => $user->id,
+                    'facebook_id' => $fbUserData['id'],
+                    'pages_updated' => !empty($facebookPages),
+                    'token_expires_at' => $tokenExpiresAt->toDateTimeString(),
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to update user with Facebook data', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Continue anyway as user exists
             }
         }
 
@@ -122,8 +192,19 @@ class FacebookController extends Controller
         $user->updateLastLogin();
         Auth::login($user, true);
 
-        Log::info('User logged in via Facebook', ['user_id' => $user->id]);
-        return redirect()->route('dashboard')->with('success', 'Welcome! You have been logged in successfully with Facebook.');
+        Log::info('User logged in via Facebook successfully', [
+            'user_id' => $user->id,
+            'facebook_pages_count' => count($facebookPages),
+            'token_expires_at' => $tokenExpiresAt->toDateTimeString(),
+        ]);
+
+        // Prepare success message with additional info
+        $successMessage = 'Welcome! You have been logged in successfully with Facebook.';
+        if (!empty($facebookPages)) {
+            $successMessage .= ' We found ' . count($facebookPages) . ' Facebook page(s) connected to your account.';
+        }
+
+        return redirect()->route('dashboard')->with('success', $successMessage);
     }
 
     /**
@@ -169,7 +250,14 @@ class FacebookController extends Controller
         }
 
         try {
-            $user->update(['facebook_id' => null]);
+            $user->update([
+                'facebook_id' => null,
+                'facebook_access_token' => null,
+                'facebook_token_expires_at' => null,
+                'facebook_refresh_token' => null,
+                'facebook_profile_picture' => null,
+                'facebook_pages' => null,
+            ]);
             Log::info('User disconnected from Facebook', ['user_id' => $user->id]);
             return redirect()->back()->with('success', 'Your Facebook account has been disconnected successfully.');
         } catch (\Exception $e) {
@@ -178,6 +266,82 @@ class FacebookController extends Controller
                 'error' => $e->getMessage(),
             ]);
             return redirect()->back()->with('error', 'Failed to disconnect Facebook account. Please try again.');
+        }
+    }
+
+    /**
+     * Refresh Facebook data (pages, profile, etc.).
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function refreshFacebookData()
+    {
+        $user = Auth::user();
+
+        if (!$user->isConnectedToFacebook()) {
+            return redirect()->back()->with('error', 'No Facebook account is currently connected.');
+        }
+
+        if (!$user->hasFacebookToken()) {
+            Log::warning('User has no Facebook token to refresh', ['user_id' => $user->id]);
+            return redirect()->back()->with('error', 'Please reconnect your Facebook account.');
+        }
+
+        // Check if token is expired
+        if ($user->isFacebookTokenExpired()) {
+            Log::warning('Facebook token is expired', ['user_id' => $user->id]);
+            return redirect()->back()->with('error', 'Your Facebook token has expired. Please reconnect your account.');
+        }
+
+        try {
+            $accessToken = $user->facebook_access_token;
+
+            // Refresh user data
+            try {
+                $fbUserData = $this->facebookService->getUserData($accessToken);
+                Log::info('Facebook user data refreshed', [
+                    'user_id' => $user->id,
+                    'facebook_id' => $fbUserData['id'],
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('Failed to refresh user data', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Refresh pages
+            try {
+                $facebookPages = $this->facebookService->getUserPages($accessToken);
+                $user->update([
+                    'facebook_pages' => $facebookPages,
+                    'facebook_profile_picture' => $fbUserData['picture_url'] ?? $user->facebook_profile_picture,
+                ]);
+
+                Log::info('Facebook data refreshed', [
+                    'user_id' => $user->id,
+                    'pages_count' => count($facebookPages),
+                ]);
+
+                $message = 'Facebook data refreshed successfully.';
+                if (!empty($facebookPages)) {
+                    $message .= ' Found ' . count($facebookPages) . ' page(s).';
+                }
+
+                return redirect()->back()->with('success', $message);
+            } catch (\Exception $e) {
+                Log::error('Failed to refresh Facebook pages', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->back()->with('error', 'Failed to refresh Facebook data. Please try again.');
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to refresh Facebook data', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+            return redirect()->back()->with('error', 'Failed to refresh Facebook data. Please try again.');
         }
     }
 }

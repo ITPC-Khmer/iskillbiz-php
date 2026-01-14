@@ -30,6 +30,11 @@ class User extends Authenticatable
         'email',
         'password',
         'facebook_id',
+        'facebook_access_token',
+        'facebook_token_expires_at',
+        'facebook_refresh_token',
+        'facebook_profile_picture',
+        'facebook_pages',
         'last_login_at',
     ];
 
@@ -55,6 +60,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'dob' => 'date',
             'last_login_at' => 'datetime',
+            'facebook_token_expires_at' => 'datetime',
+            'facebook_pages' => 'array',
         ];
     }
 
@@ -96,6 +103,51 @@ class User extends Authenticatable
     public function updateLastLogin(): bool
     {
         return $this->update(['last_login_at' => now()]);
+    }
+
+    /**
+     * Check if the user has a valid Facebook access token.
+     *
+     * @return bool
+     */
+    public function hasFacebookToken(): bool
+    {
+        return !is_null($this->facebook_access_token);
+    }
+
+    /**
+     * Check if the Facebook token is expired or expiring soon.
+     *
+     * @param int $bufferMinutes Buffer time in minutes to consider token as expiring
+     * @return bool
+     */
+    public function isFacebookTokenExpired(int $bufferMinutes = 60): bool
+    {
+        if (!$this->facebook_token_expires_at) {
+            return true;
+        }
+
+        return $this->facebook_token_expires_at->subMinutes($bufferMinutes)->isPast();
+    }
+
+    /**
+     * Get the user's Facebook pages.
+     *
+     * @return array
+     */
+    public function getFacebookPages(): array
+    {
+        return $this->facebook_pages ?? [];
+    }
+
+    /**
+     * Check if the user has any Facebook pages.
+     *
+     * @return bool
+     */
+    public function hasFacebookPages(): bool
+    {
+        return !empty($this->facebook_pages);
     }
 
     /**

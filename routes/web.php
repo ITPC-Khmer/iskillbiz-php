@@ -86,6 +86,7 @@ Route::get('/auth/facebook', [FacebookController::class, 'login'])->name('facebo
 Route::get('/auth/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
 Route::get('/home/facebook_login_back', [FacebookController::class, 'callback'])->name('facebook.facebook_login_back');
 Route::post('/facebook/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect')->middleware('auth');
+Route::post('/facebook/refresh', [FacebookController::class, 'refreshFacebookData'])->name('facebook.refresh')->middleware('auth');
 
 // Dashboard Routes
 Route::middleware('auth')->group(function () {
