@@ -45,7 +45,6 @@ class FacebookController extends Controller
                     'pages_messaging',
                     'pages_messaging_subscriptions'],auth()->user()->id
             );
-            dd($loginUrl);
             return redirect()->away($loginUrl);
         } catch (\Exception $e) {
             $this->facebookService->logError($e, 'login()');

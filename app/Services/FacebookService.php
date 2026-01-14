@@ -63,6 +63,13 @@ class FacebookService
         $graphVersion = config('services.facebook.graph_version', 'v18.0');
         $graphVersion = str_starts_with($graphVersion, 'v') ? $graphVersion : 'v' . $graphVersion;
         $scopes = implode(',', $permissions);
+        dd([
+            'client_id' => config('services.facebook.app_id'),
+            'redirect_uri' => $callbackUrl,
+            'scope' => $scopes,
+            'response_type' => 'code',
+            'state' => $state,
+        ]);
         $query = http_build_query([
             'client_id' => config('services.facebook.app_id'),
             'redirect_uri' => $callbackUrl,
