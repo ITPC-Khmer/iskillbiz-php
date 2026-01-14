@@ -538,7 +538,7 @@ class FacebookService
     }
 
     /**
-     * Get conversations for a page.
+     * Get conversations for a page (syncs all pages).
      *
      * @param string $pageId
      * @param string $pageAccessToken
@@ -557,18 +557,11 @@ class FacebookService
             ];
 
             $client = new \GuzzleHttp\Client([
-                'timeout' => 15,
+                'timeout' => 30, // Increased timeout
                 'connect_timeout' => 10,
             ]);
 
-            $response = $client->get($url, ['query' => $params]);
-            $data = json_decode((string)$response->getBody(), true);
-
-            if (isset($data['error'])) {
-                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
-            }
-
-            return $data['data'] ?? [];
+            return $this->fetchAllWithPagination($client, $url, $params);
         } catch (\Exception $e) {
             Log::error('Failed to get page conversations', [
                 'error' => $e->getMessage(),
@@ -579,7 +572,7 @@ class FacebookService
     }
 
     /**
-     * Get messages for a conversation.
+     * Get messages for a conversation (syncs all pages).
      *
      * @param string $conversationId
      * @param string $pageAccessToken
@@ -599,18 +592,11 @@ class FacebookService
             ];
 
             $client = new \GuzzleHttp\Client([
-                'timeout' => 15,
+                'timeout' => 30,
                 'connect_timeout' => 10,
             ]);
 
-            $response = $client->get($url, ['query' => $params]);
-            $data = json_decode((string)$response->getBody(), true);
-
-            if (isset($data['error'])) {
-                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
-            }
-
-            return $data['data'] ?? [];
+            return $this->fetchAllWithPagination($client, $url, $params);
         } catch (\Exception $e) {
             Log::error('Failed to get conversation messages', [
                 'error' => $e->getMessage(),
@@ -621,48 +607,51 @@ class FacebookService
     }
 
     /**
-     * Send a message from a page.
+     * Fetch all data using pagination.
      *
-     * @param string $pageId
-     * @param string $recipientId
-     * @param string $messageText
-     * @param string $pageAccessToken
+     * @param \GuzzleHttp\Client $client
+     * @param string $url
+     * @param array $params
      * @return array
      * @throws \Exception
      */
-    public function sendMessage($pageId, $recipientId, $messageText, $pageAccessToken): array
+    private function fetchAllWithPagination($client, $url, $params)
     {
-        try {
-            $url = "https://graph.facebook.com/v18.0/{$pageId}/messages";
-            $body = [
-                'recipient' => ['id' => $recipientId],
-                'message' => ['text' => $messageText],
-                'access_token' => $pageAccessToken,
-                'appsecret_proof' => hash_hmac('sha256', $pageAccessToken, config('services.facebook.app_secret')),
-            ];
+        $allItems = [];
+        $nextUrl = $url;
+        $attempt = 0;
+        $maxAttempts = 50; // Safety limit to prevent infinite loops
 
-            $client = new \GuzzleHttp\Client([
-                'timeout' => 15,
-                'connect_timeout' => 10,
-            ]);
-
-            $response = $client->post($url, [
-                'json' => $body
-            ]);
-            $data = json_decode((string)$response->getBody(), true);
-
-            if (isset($data['error'])) {
-                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+        do {
+            $options = [];
+            if (!empty($params)) {
+                $options['query'] = $params;
             }
 
-            return $data;
-        } catch (\Exception $e) {
-            Log::error('Failed to send message', [
-                'error' => $e->getMessage(),
-                'page_id' => $pageId,
-                'recipient_id' => $recipientId,
-            ]);
-            throw $e;
-        }
+            try {
+                $response = $client->get($nextUrl, $options);
+                $data = json_decode((string)$response->getBody(), true);
+
+                if (isset($data['error'])) {
+                     throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+                }
+
+                if (!empty($data['data'])) {
+                    $allItems = array_merge($allItems, $data['data']);
+                }
+
+                $nextUrl = $data['paging']['next'] ?? null;
+                $params = []; // Clear params as nextUrl contains them
+                $attempt++;
+
+            } catch (\Exception $e) {
+                // If it's a timeout or connection issue on a subsequent page, we might want to just return partial data
+                // But for now let's throw
+                throw $e;
+            }
+
+        } while ($nextUrl && $attempt < $maxAttempts);
+
+        return $allItems;
     }
 }

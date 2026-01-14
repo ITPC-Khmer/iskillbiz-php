@@ -50,6 +50,8 @@ class FacebookPageController extends Controller
 
     public function syncMessages(Request $request, $pageId)
     {
+        set_time_limit(300); // Increase time limit for syncing
+
         $user = Auth::user();
         $pages = $user->facebook_pages;
         $page = collect($pages)->firstWhere('id', $pageId);
@@ -81,19 +83,34 @@ class FacebookPageController extends Controller
 
                 // Sync Messages for each conversation
                 $messagesData = $this->facebookService->getMessages($convData['id'], $page['access_token']);
+
+                $messagesToUpsert = [];
+                $timestamp = now();
+
                 foreach ($messagesData as $msgData) {
-                    FacebookMessage::updateOrCreate(
-                        ['facebook_id' => $msgData['id']],
-                        [
-                            'conversation_id' => $conversation->id,
-                            'sender_id' => $msgData['from']['id'] ?? null,
-                            'sender_name' => $msgData['from']['name'] ?? null,
-                            'message' => $msgData['message'] ?? '',
-                            'attachments' => $msgData['attachments']['data'] ?? null,
-                            'created_time' => isset($msgData['created_time']) ? \Carbon\Carbon::parse($msgData['created_time']) : now(),
-                            'sticker' => $msgData['sticker'] ?? null,
-                        ]
-                    );
+                    $messagesToUpsert[] = [
+                        'facebook_id' => $msgData['id'],
+                        'conversation_id' => $conversation->id,
+                        'sender_id' => $msgData['from']['id'] ?? null,
+                        'sender_name' => $msgData['from']['name'] ?? null,
+                        'message' => $msgData['message'] ?? '',
+                        'attachments' => isset($msgData['attachments']['data']) ? json_encode($msgData['attachments']['data']) : null,
+                        'created_time' => isset($msgData['created_time']) ? \Carbon\Carbon::parse($msgData['created_time'])->toDateTimeString() : $timestamp->toDateTimeString(),
+                        'sticker' => $msgData['sticker'] ?? null,
+                        'created_at' => $timestamp->toDateTimeString(),
+                        'updated_at' => $timestamp->toDateTimeString(),
+                    ];
+                }
+
+                if (!empty($messagesToUpsert)) {
+                    // Process in chunks of 200 to avoid placeholders limit or memory issues
+                    foreach (array_chunk($messagesToUpsert, 200) as $chunk) {
+                        FacebookMessage::upsert(
+                            $chunk,
+                            ['facebook_id'],
+                            ['sender_id', 'sender_name', 'message', 'attachments', 'created_time', 'sticker', 'updated_at']
+                        );
+                    }
                 }
             }
 
