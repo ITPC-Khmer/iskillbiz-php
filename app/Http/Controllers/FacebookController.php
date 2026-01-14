@@ -59,24 +59,47 @@ class FacebookController extends Controller
      */
     public function callback()
     {
+        // Extract state parameter (contains user ID)
+        $state = request()->input('state');
+        $userId = $state ? (int) $state : null;
+
+        Log::info('Facebook callback initiated', [
+            'state' => $state,
+            'user_id_from_state' => $userId,
+            'has_code' => request()->has('code'),
+            'query_params' => request()->query(),
+        ]);
+
         try {
             // Get access token from callback
             $accessToken = $this->facebookService->getAccessTokenFromCallback();
         } catch (\Facebook\Exceptions\FacebookResponseException $e) {
-            Log::warning('Facebook Response Exception in callback', ['error' => $e->getMessage()]);
-            return redirect()->route('login')->with('error', 'Facebook authentication failed. Please try again.');
+            Log::warning('Facebook Response Exception in callback', [
+                'error' => $e->getMessage(),
+                'user_id' => $userId,
+            ]);
+
+            $redirectRoute = $userId ? 'dashboard' : 'login';
+            return redirect()->route($redirectRoute)->with('error', 'Facebook authentication failed. Please try again.');
         } catch (\Facebook\Exceptions\FacebookSDKException $e) {
             $this->facebookService->logError($e, 'callback() - SDK Exception');
-            return redirect()->route('login')->with('error', 'Unable to process Facebook authentication.');
+
+            $redirectRoute = $userId ? 'dashboard' : 'login';
+            return redirect()->route($redirectRoute)->with('error', 'Unable to process Facebook authentication.');
         }
 
         if (!isset($accessToken)) {
-            Log::warning('No access token retrieved from Facebook callback');
-            return redirect()->route('login')->with('error', 'Authentication was cancelled. Please try again.');
+            Log::warning('No access token retrieved from Facebook callback', [
+                'user_id' => $userId,
+            ]);
+
+            $redirectRoute = $userId ? 'dashboard' : 'login';
+            return redirect()->route($redirectRoute)->with('error', 'Authentication was cancelled. Please try again.');
         }
 
         Log::info('Facebook access token retrieved', [
             'token_length' => strlen((string) $accessToken),
+            'user_id' => $userId,
         ]);
 
         // Exchange for long-lived token (60 days)
@@ -89,11 +112,13 @@ class FacebookController extends Controller
             Log::info('Long-lived token obtained', [
                 'expires_in_days' => round($expiresIn / 86400, 1),
                 'expires_at' => $tokenExpiresAt->toDateTimeString(),
+                'user_id' => $userId,
             ]);
         } catch (\Exception $e) {
             // Continue with short-lived token if long-lived exchange fails
             Log::warning('Failed to get long-lived token, using short-lived', [
                 'error' => $e->getMessage(),
+                'user_id' => $userId,
             ]);
             $tokenExpiresAt = now()->addHours(2); // Short-lived tokens last ~2 hours
         }
@@ -104,10 +129,13 @@ class FacebookController extends Controller
             Log::info('Facebook user data retrieved', [
                 'facebook_id' => $fbUserData['id'],
                 'email' => $fbUserData['email'] ?? 'no_email',
+                'user_id' => $userId,
             ]);
         } catch (\Exception $e) {
             $this->facebookService->logError($e, 'callback() - getUserData()');
-            return redirect()->route('login')->with('error', 'Unable to retrieve user information from Facebook.');
+
+            $redirectRoute = $userId ? 'dashboard' : 'login';
+            return redirect()->route($redirectRoute)->with('error', 'Unable to retrieve user information from Facebook.');
         }
 
         // Fetch user's Facebook pages
@@ -117,24 +145,62 @@ class FacebookController extends Controller
             Log::info('Facebook pages retrieved', [
                 'page_count' => count($facebookPages),
                 'page_ids' => array_column($facebookPages, 'id'),
+                'user_id' => $userId,
             ]);
         } catch (\Exception $e) {
             // Non-critical error - continue without pages
             Log::warning('Failed to retrieve Facebook pages', [
                 'error' => $e->getMessage(),
+                'user_id' => $userId,
             ]);
         }
 
-        // Find or create user
-        $user = User::where('facebook_id', $fbUserData['id'])->first();
+        // Determine which user to update/create
+        $user = null;
 
-        if (!$user && $fbUserData['email']) {
-            // Check if user with this email already exists
-            $user = User::where('email', $fbUserData['email'])->first();
+        // Priority 1: If state contains user ID (user is already logged in and connecting Facebook)
+        if ($userId) {
+            $user = User::find($userId);
+
+            if ($user) {
+                Log::info('User found from state parameter - connecting Facebook to existing account', [
+                    'user_id' => $user->id,
+                    'facebook_id' => $fbUserData['id'],
+                ]);
+            } else {
+                Log::warning('User ID from state not found', [
+                    'state_user_id' => $userId,
+                ]);
+            }
         }
 
+        // Priority 2: Find by Facebook ID
         if (!$user) {
-            // Create new user from Facebook data
+            $user = User::where('facebook_id', $fbUserData['id'])->first();
+
+            if ($user) {
+                Log::info('User found by Facebook ID', [
+                    'user_id' => $user->id,
+                    'facebook_id' => $fbUserData['id'],
+                ]);
+            }
+        }
+
+        // Priority 3: Find by email (if Facebook provides email)
+        if (!$user && isset($fbUserData['email'])) {
+            $user = User::where('email', $fbUserData['email'])->first();
+
+            if ($user) {
+                Log::info('User found by email - linking Facebook account', [
+                    'user_id' => $user->id,
+                    'email' => $fbUserData['email'],
+                    'facebook_id' => $fbUserData['id'],
+                ]);
+            }
+        }
+
+        // Create new user if none found and no state (new registration via Facebook)
+        if (!$user && !$userId) {
             try {
                 $nameParts = explode(' ', $fbUserData['name'] ?? 'User', 2);
                 $user = User::create([
@@ -148,6 +214,7 @@ class FacebookController extends Controller
                     'facebook_pages' => $facebookPages,
                     'password' => Hash::make(uniqid()),
                 ]);
+
                 Log::info('New user created via Facebook', [
                     'user_id' => $user->id,
                     'facebook_id' => $fbUserData['id'],
@@ -160,7 +227,7 @@ class FacebookController extends Controller
                 ]);
                 return redirect()->route('login')->with('error', 'Failed to create account. Please try again.');
             }
-        } else {
+        } elseif ($user) {
             // Update existing user with Facebook data
             try {
                 $updateData = [
@@ -178,6 +245,7 @@ class FacebookController extends Controller
                     'facebook_id' => $fbUserData['id'],
                     'pages_updated' => !empty($facebookPages),
                     'token_expires_at' => $tokenExpiresAt->toDateTimeString(),
+                    'was_from_state' => $userId === $user->id,
                 ]);
             } catch (\Exception $e) {
                 Log::error('Failed to update user with Facebook data', [
@@ -186,20 +254,39 @@ class FacebookController extends Controller
                 ]);
                 // Continue anyway as user exists
             }
+        } else {
+            // Edge case: state provided but no user found and can't create
+            Log::error('Cannot process Facebook callback - user not found', [
+                'state_user_id' => $userId,
+                'facebook_id' => $fbUserData['id'],
+            ]);
+            return redirect()->route('login')->with('error', 'Unable to complete Facebook connection. Please try again.');
         }
 
-        // Update last login and authenticate
-        $user->updateLastLogin();
-        Auth::login($user, true);
+        // Update last login and authenticate (only if not already logged in)
+        if (!Auth::check() || Auth::id() !== $user->id) {
+            $user->updateLastLogin();
+            Auth::login($user, true);
 
-        Log::info('User logged in via Facebook successfully', [
-            'user_id' => $user->id,
-            'facebook_pages_count' => count($facebookPages),
-            'token_expires_at' => $tokenExpiresAt->toDateTimeString(),
-        ]);
+            Log::info('User logged in via Facebook successfully', [
+                'user_id' => $user->id,
+                'facebook_pages_count' => count($facebookPages),
+                'token_expires_at' => $tokenExpiresAt->toDateTimeString(),
+            ]);
+        } else {
+            Log::info('Facebook connected to already logged-in user', [
+                'user_id' => $user->id,
+                'facebook_pages_count' => count($facebookPages),
+                'token_expires_at' => $tokenExpiresAt->toDateTimeString(),
+            ]);
+        }
 
         // Prepare success message with additional info
-        $successMessage = 'Welcome! You have been logged in successfully with Facebook.';
+        $isConnection = $userId !== null;
+        $successMessage = $isConnection
+            ? 'Facebook account connected successfully!'
+            : 'Welcome! You have been logged in successfully with Facebook.';
+
         if (!empty($facebookPages)) {
             $successMessage .= ' We found ' . count($facebookPages) . ' Facebook page(s) connected to your account.';
         }
