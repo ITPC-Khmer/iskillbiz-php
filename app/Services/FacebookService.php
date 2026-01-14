@@ -51,10 +51,20 @@ class FacebookService
      * @param array $permissions
      * @return string
      */
-    public function getLoginUrl(string $callbackUrl, array $permissions = ['email']): string
+    public function getLoginUrl(string $callbackUrl, array $permissions = ['email'], ?string $state = null): string
     {
-        $helper = $this->getRedirectLoginHelper();
-        return $helper->getLoginUrl($callbackUrl, $permissions);
+        $graphVersion = config('services.facebook.graph_version', 'v18.0');
+        $graphVersion = str_starts_with($graphVersion, 'v') ? $graphVersion : 'v' . $graphVersion;
+        $scopes = implode(',', $permissions);
+        $query = http_build_query([
+            'client_id' => config('services.facebook.app_id'),
+            'redirect_uri' => $callbackUrl,
+            'scope' => $scopes,
+            'response_type' => 'code',
+            'state' => $state,
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        return sprintf('https://www.facebook.com/%s/dialog/oauth?%s', $graphVersion, $query);
     }
 
     /**
