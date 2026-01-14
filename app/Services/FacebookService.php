@@ -92,10 +92,10 @@ class FacebookService
     /**
      * Get access token from callback.
      *
-     * Attempts multiple strategies:
-     * 1. SDK helper (preferred) - handles state validation automatically
-     * 2. OAuth2 client direct exchange - fallback if state validation fails
-     * 3. Direct HTTP call - last resort fallback with explicit error handling
+     * Attempts multiple strategies (Direct HTTP is now primary):
+     * 1. Direct HTTP call (preferred) - direct Graph API token exchange
+     * 2. OAuth2 client direct exchange - fallback using SDK OAuth2 client
+     * 3. SDK helper - last resort for backward compatibility
      *
      * @return \Facebook\Authentication\AccessToken|null
      * @throws \Facebook\Exceptions\FacebookResponseException
@@ -103,77 +103,91 @@ class FacebookService
      */
     public function getAccessTokenFromCallback()
     {
-        $helper = $this->getRedirectLoginHelper();
+        $code = request()->input('code');
 
-        // Strategy 1: Try using SDK's built-in helper (preferred method)
+        if (!$code) {
+            Log::warning('No authorization code in callback', [
+                'has_error' => request()->has('error'),
+                'error' => request()->input('error'),
+                'error_description' => request()->input('error_description'),
+            ]);
+            throw new \Facebook\Exceptions\FacebookSDKException('No authorization code provided in callback');
+        }
+
+        // Strategy 1: Direct HTTP call to Graph API (preferred method - most reliable)
         try {
-            $accessToken = $helper->getAccessToken();
-            Log::info('Access token obtained via SDK helper', [
+            Log::info('Attempting Strategy 1: Direct HTTP token exchange via Graph API');
+            $accessToken = $this->exchangeCodeForTokenViaHttp($code);
+
+            Log::info('Access token obtained via direct HTTP', [
                 'token_length' => strlen((string) $accessToken),
-                'method' => 'sdk_helper',
+                'method' => 'direct_http',
+                'code_length' => strlen($code),
             ]);
+
             return $accessToken;
-        } catch (\Facebook\Exceptions\FacebookSDKException $e) {
-            // Check if this is a state validation error
-            $isStateError = strpos($e->getMessage(), 'state') !== false;
-            $hasCode = request()->has('code');
-
-            Log::warning('SDK helper failed', [
+        } catch (\Exception $e) {
+            Log::warning('Direct HTTP token exchange failed, trying fallback methods', [
                 'error_message' => $e->getMessage(),
-                'is_state_error' => $isStateError,
-                'has_code' => $hasCode,
-                'has_url_state' => request()->has('state'),
-                'method_attempted' => 'sdk_helper',
+                'error_code' => $e->getCode(),
+                'method_attempted' => 'direct_http',
             ]);
 
-            // If it's a state error and we have a code, try fallback methods
-            if ($isStateError && $hasCode) {
-                // Strategy 2: Try OAuth2 client direct exchange
+            // Strategy 2: Try OAuth2 client direct exchange
+            try {
+                Log::info('Attempting Strategy 2: OAuth2 client direct exchange');
+                $redirectUri = route('facebook.facebook_login_back');
+
+                $oauth2Client = $this->facebook->getOAuth2Client();
+                $accessToken = $oauth2Client->getAccessTokenFromCode($code, $redirectUri);
+
+                Log::info('Access token obtained via OAuth2 client fallback', [
+                    'token_length' => strlen((string) $accessToken),
+                    'method' => 'oauth2_client',
+                    'redirect_uri' => $redirectUri,
+                ]);
+                return $accessToken;
+            } catch (\Exception $ex) {
+                Log::warning('OAuth2 client fallback failed, trying SDK helper', [
+                    'error_message' => $ex->getMessage(),
+                    'error_code' => $ex->getCode(),
+                    'method_attempted' => 'oauth2_client',
+                ]);
+
+                // Strategy 3: Try SDK helper as last resort
                 try {
-                    Log::info('Attempting Strategy 2: OAuth2 client direct exchange');
-                    $code = request()->input('code');
-                    $redirectUri = route('facebook.facebook_login_back');
+                    Log::info('Attempting Strategy 3: SDK helper (last resort)');
+                    $helper = $this->getRedirectLoginHelper();
+                    $accessToken = $helper->getAccessToken();
 
-                    $oauth2Client = $this->facebook->getOAuth2Client();
-                    $accessToken = $oauth2Client->getAccessTokenFromCode($code, $redirectUri);
-
-                    Log::info('Access token obtained via OAuth2 client fallback', [
+                    Log::info('Access token obtained via SDK helper', [
                         'token_length' => strlen((string) $accessToken),
-                        'method' => 'oauth2_client',
-                        'redirect_uri' => $redirectUri,
+                        'method' => 'sdk_helper',
                     ]);
                     return $accessToken;
-                } catch (\Exception $ex) {
-                    Log::warning('OAuth2 client fallback failed', [
-                        'error_message' => $ex->getMessage(),
-                        'error_code' => $ex->getCode(),
-                        'method_attempted' => 'oauth2_client',
+                } catch (\Facebook\Exceptions\FacebookSDKException $sdkEx) {
+                    Log::error('All token exchange strategies failed', [
+                        'direct_http_error' => $e->getMessage(),
+                        'oauth2_client_error' => $ex->getMessage(),
+                        'sdk_helper_error' => $sdkEx->getMessage(),
+                        'method_attempted' => 'sdk_helper',
                     ]);
 
-                    // Strategy 3: Direct HTTP call as last resort
-                    try {
-                        Log::info('Attempting Strategy 3: Direct HTTP token exchange');
-                        return $this->exchangeCodeForTokenViaHttp(request()->input('code'));
-                    } catch (\Exception $httpEx) {
-                        Log::error('Direct HTTP token exchange failed - all strategies exhausted', [
-                            'error_message' => $httpEx->getMessage(),
-                            'error_code' => $httpEx->getCode(),
-                            'method_attempted' => 'direct_http',
-                            'original_state_error' => $e->getMessage(),
-                        ]);
-                        throw $e; // Throw original exception
-                    }
+                    // Throw the most relevant error (from direct HTTP attempt)
+                    throw new \Facebook\Exceptions\FacebookSDKException(
+                        'Failed to obtain access token from callback. Direct HTTP: ' . $e->getMessage(),
+                        0,
+                        $e
+                    );
                 }
             }
-
-            // If not a state error or no code available, throw immediately
-            throw $e;
         }
     }
 
     /**
      * Exchange authorization code for access token via direct HTTP call.
-     * This is a last-resort fallback that mimics the JavaScript approach suggested.
+     * This method directly calls Facebook Graph API similar to the JavaScript approach:
+     * GET https://graph.facebook.com/v18.0/oauth/access_token
      *
      * @param string $code Authorization code from Facebook callback
      * @return \Facebook\Authentication\AccessToken
@@ -185,18 +199,25 @@ class FacebookService
         $appSecret = config('services.facebook.app_secret');
         $redirectUri = route('facebook.facebook_login_back');
 
+        // Validate configuration
         if (!$appId || !$appSecret) {
             throw new \Exception('Facebook App ID or App Secret is not configured');
         }
 
-        Log::debug('Preparing direct HTTP token exchange', [
+        if (empty($code)) {
+            throw new \Exception('Authorization code is empty');
+        }
+
+        Log::info('Starting direct HTTP token exchange via Graph API', [
             'code_length' => strlen($code),
             'redirect_uri' => $redirectUri,
-            'app_id_length' => strlen($appId),
+            'app_id' => substr($appId, 0, 5) . '...',
+            'graph_version' => 'v18.0',
         ]);
 
         try {
-            // Build the token exchange URL with query parameters
+            // Exchange code for access token using Facebook Graph API
+            // This matches the JavaScript example provided by the user
             $tokenUrl = 'https://graph.facebook.com/v18.0/oauth/access_token';
             $params = [
                 'client_id' => $appId,
@@ -206,63 +227,99 @@ class FacebookService
             ];
 
             // Use Guzzle HTTP client for the request
-            $client = new \GuzzleHttp\Client();
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            Log::debug('Sending token exchange request to Facebook Graph API', [
+                'url' => $tokenUrl,
+                'params_keys' => array_keys($params),
+            ]);
+
             $response = $client->get($tokenUrl, [
                 'query' => $params,
-                'timeout' => 10,
-                'connect_timeout' => 5,
                 'headers' => [
                     'Accept' => 'application/json',
-                    'User-Agent' => 'iskillbiz-facebook-oauth/1.0',
+                    'User-Agent' => 'iskillbiz-php-oauth/2.0',
                 ],
-                'http_errors' => true, // Let exceptions be thrown on 4xx/5xx
+                'http_errors' => true, // Throw exceptions on 4xx/5xx errors
             ]);
 
+            $statusCode = $response->getStatusCode();
             $responseBody = json_decode((string) $response->getBody(), true);
 
-            Log::debug('HTTP token exchange response received', [
+            if ($statusCode !== 200) {
+                throw new \Exception("Unexpected HTTP status code: {$statusCode}");
+            }
+
+            Log::debug('Graph API response received', [
+                'status_code' => $statusCode,
                 'has_access_token' => isset($responseBody['access_token']),
                 'has_expires_in' => isset($responseBody['expires_in']),
-                'response_keys' => array_keys($responseBody),
+                'has_token_type' => isset($responseBody['token_type']),
+                'response_keys' => array_keys($responseBody ?? []),
             ]);
 
+            // Validate response structure
             if (!isset($responseBody['access_token'])) {
-                $errorMsg = $responseBody['error']['message'] ?? 'Unknown error';
-                throw new \Exception("Facebook token exchange failed: {$errorMsg}");
+                $errorMsg = $responseBody['error']['message'] ?? 'No access token in response';
+                $errorCode = $responseBody['error']['code'] ?? 'unknown';
+                throw new \Exception("Facebook Graph API error [{$errorCode}]: {$errorMsg}");
             }
+
+            // Extract token data (matching JavaScript example structure)
+            $accessTokenString = $responseBody['access_token'];
+            $expiresIn = $responseBody['expires_in'] ?? null;
 
             // Convert the response to Facebook SDK's AccessToken object
             $accessToken = new \Facebook\Authentication\AccessToken(
-                $responseBody['access_token'],
-                $responseBody['expires_in'] ?? null
+                $accessTokenString,
+                $expiresIn
             );
 
-            Log::info('HTTP direct token exchange successful', [
-                'token_length' => strlen((string) $accessToken),
-                'expires_in' => $responseBody['expires_in'] ?? null,
+            Log::info('Direct HTTP token exchange successful', [
+                'token_length' => strlen($accessTokenString),
+                'expires_in' => $expiresIn,
+                'expires_in_days' => $expiresIn ? round($expiresIn / 86400, 1) : null,
+                'token_type' => $responseBody['token_type'] ?? 'bearer',
             ]);
 
             return $accessToken;
         } catch (\GuzzleHttp\Exception\RequestException $e) {
             $statusCode = $e->getResponse()?->getStatusCode();
             $responseBody = (string) $e->getResponse()?->getBody();
+            $responseData = json_decode($responseBody, true);
+
+            $errorMessage = $responseData['error']['message'] ?? $e->getMessage();
+            $errorCode = $responseData['error']['code'] ?? 'unknown';
+            $errorType = $responseData['error']['type'] ?? 'unknown';
 
             Log::error('HTTP token exchange request failed', [
                 'status_code' => $statusCode,
-                'error_message' => $e->getMessage(),
+                'error_code' => $errorCode,
+                'error_type' => $errorType,
+                'error_message' => $errorMessage,
                 'response_body' => $responseBody,
                 'code_provided' => !empty($code),
             ]);
 
             throw new \Exception(
-                "Failed to exchange code for token (HTTP {$statusCode}): {$e->getMessage()}"
+                "Facebook Graph API token exchange failed [{$errorCode}]: {$errorMessage} (HTTP {$statusCode})"
             );
         } catch (\Exception $e) {
-            Log::error('HTTP token exchange error', [
+            // Don't re-wrap exceptions that are already wrapped
+            if (strpos($e->getMessage(), 'Facebook Graph API') !== false) {
+                throw $e;
+            }
+
+            Log::error('HTTP token exchange unexpected error', [
                 'error_message' => $e->getMessage(),
                 'error_class' => get_class($e),
+                'error_code' => $e->getCode(),
             ]);
-            throw $e;
+
+            throw new \Exception("Token exchange failed: {$e->getMessage()}", 0, $e);
         }
     }
 
