@@ -348,19 +348,36 @@ class FacebookService
      * @param string $accessToken
      * @param string $fields
      * @return array
-     * @throws \Facebook\Exceptions\FacebookResponseException
+     * @throws \Exception
      */
     public function getUserData($accessToken, string $fields = 'id,name,email,picture'): array
     {
         try {
-            $response = $this->facebook->get("/me?fields={$fields}", $accessToken);
-            $user = $response->getGraphUser();
+            // Direct HTTP call
+            $url = "https://graph.facebook.com/v18.0/me";
+            $params = [
+                'fields' => $fields,
+                'access_token' => (string)$accessToken,
+                'appsecret_proof' => hash_hmac('sha256', (string)$accessToken, config('services.facebook.app_secret')),
+            ];
+
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->get($url, ['query' => $params]);
+            $user = json_decode((string)$response->getBody(), true);
+
+             if (isset($user['error'])) {
+                 throw new \Exception($user['error']['message'] ?? 'Unknown Facebook error');
+            }
 
             return [
-                'id' => $user->getId(),
-                'name' => $user->getName(),
-                'email' => $user->getEmail(),
-                'picture_url' => $user->getPicture()?->getUrl(),
+                'id' => $user['id'],
+                'name' => $user['name'] ?? null,
+                'email' => $user['email'] ?? null,
+                'picture_url' => $user['picture']['data']['url'] ?? null,
             ];
         } catch (\Exception $e) {
             Log::error('Failed to retrieve Facebook user data', [
@@ -397,14 +414,30 @@ class FacebookService
     public function getLongLivedToken(string $accessToken): array
     {
         try {
-            $oauth2Client = $this->facebook->getOAuth2Client();
-            $longLivedToken = $oauth2Client->getLongLivedAccessToken($accessToken);
+            // Direct HTTP call to avoid SDK issues with PHP 8.2+
+            $url = 'https://graph.facebook.com/v18.0/oauth/access_token';
+            $params = [
+                'grant_type' => 'fb_exchange_token',
+                'client_id' => config('services.facebook.app_id'),
+                'client_secret' => config('services.facebook.app_secret'),
+                'fb_exchange_token' => $accessToken,
+            ];
+
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->get($url, ['query' => $params]);
+            $data = json_decode((string)$response->getBody(), true);
+
+            if (isset($data['error'])) {
+                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+            }
 
             return [
-                'access_token' => (string) $longLivedToken,
-                'expires_in' => $longLivedToken->getExpiresAt() ?
-                    $longLivedToken->getExpiresAt()->getTimestamp() - time() :
-                    5184000, // 60 days default
+                'access_token' => $data['access_token'],
+                'expires_in' => $data['expires_in'] ?? 5184000,
             ];
         } catch (\Exception $e) {
             Log::error('Failed to get long-lived token', [
@@ -419,27 +452,42 @@ class FacebookService
      *
      * @param string $accessToken
      * @return array
-     * @throws \Facebook\Exceptions\FacebookResponseException
+     * @throws \Exception
      */
     public function getUserPages($accessToken): array
     {
         try {
-            $response = $this->facebook->get(
-                '/me/accounts?fields=id,name,access_token,category,tasks,picture{url}',
-                $accessToken
-            );
+            $url = "https://graph.facebook.com/v18.0/me/accounts";
+            $params = [
+                'fields' => 'id,name,access_token,category,tasks,picture{url}',
+                'access_token' => (string)$accessToken,
+                'limit' => 100,
+                'appsecret_proof' => hash_hmac('sha256', (string)$accessToken, config('services.facebook.app_secret')),
+            ];
 
-            $pages = $response->getGraphEdge();
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->get($url, ['query' => $params]);
+            $data = json_decode((string)$response->getBody(), true);
+
+            if (isset($data['error'])) {
+                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+            }
+
+            $pages = $data['data'] ?? [];
             $pagesArray = [];
 
             foreach ($pages as $page) {
                 $pagesArray[] = [
-                    'id' => $page->getField('id'),
-                    'name' => $page->getField('name'),
-                    'access_token' => $page->getField('access_token'),
-                    'category' => $page->getField('category'),
-                    'tasks' => $page->getField('tasks'),
-                    'picture_url' => $page->getField('picture')['url'] ?? null,
+                    'id' => $page['id'] ?? null,
+                    'name' => $page['name'] ?? null,
+                    'access_token' => $page['access_token'] ?? null,
+                    'category' => $page['category'] ?? null,
+                    'tasks' => $page['tasks'] ?? [],
+                    'picture_url' => $page['picture']['data']['url'] ?? null,
                 ];
             }
 
@@ -462,12 +510,25 @@ class FacebookService
     public function inspectToken(string $accessToken): array
     {
         try {
-            $response = $this->facebook->get(
-                '/debug_token?input_token=' . $accessToken,
-                config('services.facebook.app_id') . '|' . config('services.facebook.app_secret')
-            );
+            $url = 'https://graph.facebook.com/v18.0/debug_token';
+            $params = [
+                'input_token' => $accessToken,
+                'access_token' => config('services.facebook.app_id') . '|' . config('services.facebook.app_secret'),
+            ];
 
-            return $response->getDecodedBody()['data'] ?? [];
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->get($url, ['query' => $params]);
+            $data = json_decode((string)$response->getBody(), true);
+
+            if (isset($data['error'])) {
+                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+            }
+
+            return $data['data'] ?? [];
         } catch (\Exception $e) {
             Log::error('Failed to inspect token', [
                 'error' => $e->getMessage(),
