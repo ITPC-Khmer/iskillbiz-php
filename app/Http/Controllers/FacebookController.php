@@ -33,8 +33,7 @@ class FacebookController extends Controller
     public function login()
     {
         try {
-            $loginUrl = $this->facebookService->getLoginUrl(route('facebook.callback'));
-           dd($loginUrl);
+            $loginUrl = $this->facebookService->getLoginUrl(route('facebook.facebook_login_back'));
             return redirect()->away($loginUrl);
         } catch (\Exception $e) {
             $this->facebookService->logError($e, 'login()');

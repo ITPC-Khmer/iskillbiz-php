@@ -84,6 +84,7 @@ Route::get('/forgot-password', function () {
 // Facebook Authentication Routes
 Route::get('/auth/facebook', [FacebookController::class, 'login'])->name('facebook.login');
 Route::get('/auth/facebook/callback', [FacebookController::class, 'callback'])->name('facebook.callback');
+Route::get('/home/facebook_login_back', [FacebookController::class, 'callback'])->name('facebook.facebook_login_back');
 Route::post('/facebook/disconnect', [FacebookController::class, 'disconnect'])->name('facebook.disconnect')->middleware('auth');
 
 // Dashboard Routes

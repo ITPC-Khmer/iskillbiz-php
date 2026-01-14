@@ -20,3 +20,7 @@ sudo rm /etc/nginx/sites-enabled/*.iel.org.kh
 
 # Remove the actual configuration files in sites-available
 sudo rm /etc/nginx/sites-available/*.iel.org.kh
+
+https://web.facebook.com/v18.0/dialog/oauth?encrypted_query_string=AeHV4UEKH3JbtGoq1usEmmDFC1vUNjAOIcQJNH1FWV5bSy9EQRFOmqKZoaLZT2jZTaVl5rhCxL_vduvR5DUitFMgqRvW6-SaKo-VeP9tzv713guUTRn5TXvHQiFpe7gYk3AHrFqmDXmHx2xz6O2zZvRnPKrNwBkaOXk7kOvSZZqN7kD_KpyMMi_G6TA1ykJM-jMX8ogTr4tGVS0ipEeO_kJrBLYgyGWy0RmWtKkT68bpSV3N3RdH7pTMeuU_xiHN_Kh7gdvjsK4aN7f3o9LxkQjlYgAIeiv24sC8nj0iwFVRo0cXPJ_Rl6AY1XPsE_Pt-uSAm6c&_rdc=1&_rdr#
+
+
