@@ -104,7 +104,46 @@
 
     <!-- Main Content Row -->
     <div class="row">
+        <div class="col-lg-8 mb-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 style="margin: 0; font-weight: 600;">Recent Activity</h5>
+                </div>
+                <div class="card-body p-4">
+                    <div style="display: flex; flex-direction: column; gap: 20px;">
+                        <div style="display: flex; align-items: flex-start; gap: 15px;">
+                            <div style="width: 40px; height: 40px; background: rgba(102, 126, 234, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color); flex-shrink: 0;">
+                                <i class="fas fa-star"></i>
+                            </div>
+                            <div style="flex: 1;">
+                                <p style="margin: 0; font-weight: 600; color: var(--dark-bg);">New 5-star review from John Smith</p>
+                                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 13px;">2 hours ago</p>
+                            </div>
+                        </div>
 
+                        <div style="display: flex; align-items: flex-start; gap: 15px;">
+                            <div style="width: 40px; height: 40px; background: rgba(16, 185, 129, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--success-color); flex-shrink: 0;">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div style="flex: 1;">
+                                <p style="margin: 0; font-weight: 600; color: var(--dark-bg);">Project completed: Web Design for ABC Corp</p>
+                                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 13px;">1 day ago</p>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; align-items: flex-start; gap: 15px;">
+                            <div style="width: 40px; height: 40px; background: rgba(250, 204, 21, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fcc417; flex-shrink: 0;">
+                                <i class="fas fa-handshake"></i>
+                            </div>
+                            <div style="flex: 1;">
+                                <p style="margin: 0; font-weight: 600; color: var(--dark-bg);">New order from Sarah Johnson</p>
+                                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 13px;">2 days ago</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- Profile Card -->
         <div class="col-lg-4 mb-4">
             <div class="card" style="text-align: center;">
@@ -228,50 +267,6 @@
                     <button style="width: 100%; padding: 12px; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
                         <i class="fas fa-edit"></i> Edit Profile
                     </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Recent Activity -->
-    <div class="row" style="margin-top: 30px;">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 style="margin: 0; font-weight: 600;">Recent Activity</h5>
-                </div>
-                <div class="card-body p-4">
-                    <div style="display: flex; flex-direction: column; gap: 20px;">
-                        <div style="display: flex; align-items: flex-start; gap: 15px;">
-                            <div style="width: 40px; height: 40px; background: rgba(102, 126, 234, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-color); flex-shrink: 0;">
-                                <i class="fas fa-star"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <p style="margin: 0; font-weight: 600; color: var(--dark-bg);">New 5-star review from John Smith</p>
-                                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 13px;">2 hours ago</p>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; align-items: flex-start; gap: 15px;">
-                            <div style="width: 40px; height: 40px; background: rgba(16, 185, 129, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--success-color); flex-shrink: 0;">
-                                <i class="fas fa-check-circle"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <p style="margin: 0; font-weight: 600; color: var(--dark-bg);">Project completed: Web Design for ABC Corp</p>
-                                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 13px;">1 day ago</p>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; align-items: flex-start; gap: 15px;">
-                            <div style="width: 40px; height: 40px; background: rgba(250, 204, 21, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fcc417; flex-shrink: 0;">
-                                <i class="fas fa-handshake"></i>
-                            </div>
-                            <div style="flex: 1;">
-                                <p style="margin: 0; font-weight: 600; color: var(--dark-bg);">New order from Sarah Johnson</p>
-                                <p style="margin: 5px 0 0 0; color: #64748b; font-size: 13px;">2 days ago</p>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
