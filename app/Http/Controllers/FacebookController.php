@@ -3,136 +3,170 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Facebook\Facebook;
+use App\Services\FacebookService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 class FacebookController extends Controller
 {
-    protected $facebook;
+    /**
+     * @var FacebookService
+     */
+    protected $facebookService;
 
-    public function __construct()
+    /**
+     * Constructor with dependency injection.
+     *
+     * @param FacebookService $facebookService
+     */
+    public function __construct(FacebookService $facebookService)
     {
-        $this->facebook = new Facebook([
-            'app_id' => config('services.facebook.app_id'),
-            'app_secret' => config('services.facebook.app_secret'),
-            'default_graph_version' => 'v18.0',
-        ]);
+        $this->facebookService = $facebookService;
     }
 
     /**
-     * Redirect to Facebook for authentication
+     * Redirect user to Facebook for authentication.
+     *
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function login()
     {
-        $helper = $this->facebook->getRedirectLoginHelper();
-        $permissions = ['email', 'public_profile'];
-        $loginUrl = $helper->getLoginUrl(route('facebook.callback'), $permissions);
-
-        return redirect()->away($loginUrl);
+        try {
+            $loginUrl = $this->facebookService->getLoginUrl(route('facebook.callback'));
+            return redirect()->away($loginUrl);
+        } catch (\Exception $e) {
+            $this->facebookService->logError($e, 'login()');
+            return redirect()->route('login')->with('error', 'Unable to connect to Facebook. Please try again.');
+        }
     }
 
     /**
-     * Handle Facebook callback
+     * Handle Facebook OAuth callback.
+     *
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function callback()
     {
-        $helper = $this->facebook->getRedirectLoginHelper();
-
         try {
-            $accessToken = $helper->getAccessToken();
+            // Get access token from callback
+            $accessToken = $this->facebookService->getAccessTokenFromCallback();
         } catch (\Facebook\Exceptions\FacebookResponseException $e) {
-            return redirect()->route('login')->with('error', 'Facebook API Error: ' . $e->getMessage());
+            Log::warning('Facebook Response Exception in callback', ['error' => $e->getMessage()]);
+            return redirect()->route('login')->with('error', 'Facebook authentication failed. Please try again.');
         } catch (\Facebook\Exceptions\FacebookSDKException $e) {
-            return redirect()->route('login')->with('error', 'Facebook SDK Error: ' . $e->getMessage());
+            $this->facebookService->logError($e, 'callback() - SDK Exception');
+            return redirect()->route('login')->with('error', 'Unable to process Facebook authentication.');
         }
 
         if (!isset($accessToken)) {
-            return redirect()->route('login')->with('error', 'No access token retrieved');
+            Log::warning('No access token retrieved from Facebook callback');
+            return redirect()->route('login')->with('error', 'Authentication was cancelled. Please try again.');
         }
 
         // Get user details from Facebook
         try {
-            $response = $this->facebook->get('/me?fields=id,name,email,picture', $accessToken);
-            $fbUser = $response->getGraphUser();
-        } catch (\Facebook\Exceptions\FacebookResponseException $e) {
-            return redirect()->route('login')->with('error', 'Failed to retrieve user info: ' . $e->getMessage());
+            $fbUserData = $this->facebookService->getUserData($accessToken);
+        } catch (\Exception $e) {
+            $this->facebookService->logError($e, 'callback() - getUserData()');
+            return redirect()->route('login')->with('error', 'Unable to retrieve user information from Facebook.');
         }
 
         // Find or create user
-        $user = User::where('facebook_id', $fbUser->getId())->first();
+        $user = User::where('facebook_id', $fbUserData['id'])->first();
+
+        if (!$user && $fbUserData['email']) {
+            // Check if user with this email already exists
+            $user = User::where('email', $fbUserData['email'])->first();
+        }
 
         if (!$user) {
-            // Check if email already exists
-            if ($fbUser->getEmail()) {
-                $user = User::where('email', $fbUser->getEmail())->first();
-            }
-
-            if (!$user) {
-                // Create new user
-                $nameParts = explode(' ', $fbUser->getName(), 2);
+            // Create new user from Facebook data
+            try {
+                $nameParts = explode(' ', $fbUserData['name'] ?? 'User', 2);
                 $user = User::create([
-                    'name' => $fbUser->getName(),
-                    'email' => $fbUser->getEmail() ?? 'fb_' . $fbUser->getId() . '@facebook.local',
-                    'facebook_id' => $fbUser->getId(),
+                    'first_name' => $nameParts[0] ?? 'User',
+                    'last_name' => $nameParts[1] ?? '',
+                    'email' => $fbUserData['email'] ?? 'fb_' . $fbUserData['id'] . '@facebook.local',
+                    'facebook_id' => $fbUserData['id'],
                     'password' => Hash::make(uniqid()),
                 ]);
-            } else {
-                // Update existing user with Facebook ID
-                $user->update(['facebook_id' => $fbUser->getId()]);
+                Log::info('New user created via Facebook', ['user_id' => $user->id, 'facebook_id' => $fbUserData['id']]);
+            } catch (\Exception $e) {
+                Log::error('Failed to create user from Facebook data', [
+                    'error' => $e->getMessage(),
+                    'facebook_id' => $fbUserData['id'],
+                ]);
+                return redirect()->route('login')->with('error', 'Failed to create account. Please try again.');
+            }
+        } else {
+            // Update existing user with Facebook ID if not already set
+            if (!$user->facebook_id) {
+                $user->update(['facebook_id' => $fbUserData['id']]);
+                Log::info('Existing user connected to Facebook', ['user_id' => $user->id]);
             }
         }
 
-        // Login the user
+        // Update last login and authenticate
+        $user->updateLastLogin();
         Auth::login($user, true);
 
-        return redirect()->route('dashboard')->with('success', 'Logged in successfully with Facebook!');
+        Log::info('User logged in via Facebook', ['user_id' => $user->id]);
+        return redirect()->route('dashboard')->with('success', 'Welcome! You have been logged in successfully with Facebook.');
     }
 
     /**
-     * Get Facebook user info (requires authenticated user)
+     * Get authenticated user's Facebook information.
+     *
+     * @return \Illuminate\Http\JsonResponse
      */
     public function getMe()
     {
         $user = Auth::user();
 
-        if (!$user->facebook_id) {
-            return response()->json(['error' => 'User not connected to Facebook'], 400);
+        if (!$user->isConnectedToFacebook()) {
+            Log::warning('Attempted to get Facebook info for non-connected user', ['user_id' => $user->id]);
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not connected to Facebook',
+            ], 400);
         }
 
-        try {
-            // This would require storing and refreshing the access token
-            // For now, just return the stored user info
-            $response = $this->facebook->get('/' . $user->facebook_id . '?fields=id,name,email,picture', config('services.facebook.app_secret'));
-            $fbUser = $response->getGraphUser();
-
-            return response()->json([
-                'id' => $fbUser->getId(),
-                'name' => $fbUser->getName(),
-                'email' => $fbUser->getEmail(),
-                'picture' => $fbUser->getPicture()->getUrl(),
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
+        // Return stored user information
+        // Note: To get real-time data, we would need to store and refresh the access token
+        return response()->json([
+            'success' => true,
+            'data' => [
                 'id' => $user->facebook_id,
                 'name' => $user->name,
                 'email' => $user->email,
-            ]);
-        }
+            ],
+        ]);
     }
 
     /**
-     * Disconnect Facebook account
+     * Disconnect user's Facebook account.
+     *
+     * @return \Illuminate\Http\RedirectResponse
      */
     public function disconnect()
     {
         $user = Auth::user();
 
-        if ($user->facebook_id) {
-            $user->update(['facebook_id' => null]);
-            return redirect()->back()->with('success', 'Facebook account disconnected successfully!');
+        if (!$user->isConnectedToFacebook()) {
+            return redirect()->back()->with('error', 'No Facebook account is currently connected.');
         }
 
-        return redirect()->back()->with('error', 'No Facebook account connected!');
+        try {
+            $user->update(['facebook_id' => null]);
+            Log::info('User disconnected from Facebook', ['user_id' => $user->id]);
+            return redirect()->back()->with('success', 'Your Facebook account has been disconnected successfully.');
+        } catch (\Exception $e) {
+            Log::error('Failed to disconnect Facebook', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+            return redirect()->back()->with('error', 'Failed to disconnect Facebook account. Please try again.');
+        }
     }
 }
