@@ -13,6 +13,8 @@ sudo nginx -t
 sudo systemctl restart nginx
 
 
+
+
 # Remove the symbolic links in sites-enabled
 sudo rm /etc/nginx/sites-enabled/*.iel.org.kh
 
