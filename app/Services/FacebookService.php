@@ -51,7 +51,7 @@ class FacebookService
      * @param array $permissions
      * @return string
      */
-    public function getLoginUrl(string $callbackUrl, array $permissions = ['email', 'public_profile']): string
+    public function getLoginUrl(string $callbackUrl, array $permissions = ['email']): string
     {
         $helper = $this->getRedirectLoginHelper();
         return $helper->getLoginUrl($callbackUrl, $permissions);

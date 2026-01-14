@@ -1,0 +1,63 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    FACEBOOK LOGIN - QUICK FIX GUIDE                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📋 PROBLEM
+----------
+Error: "This app isn't available. This app needs at least one supported permission."
+
+✅ SOLUTION (3 Steps - Takes 5 minutes)
+-----------------------------------------
+
+1️⃣  ADD REDIRECT URLs
+   Go to: https://developers.facebook.com/apps/4388603488126290/fb-login/settings/
+   Add to "Valid OAuth Redirect URIs":
+
+   http://localhost:8000/auth/facebook/callback
+   http://localhost:8000/home/facebook_login_back
+
+   Click "Save Changes"
+
+2️⃣  ADD TEST USER
+   Go to: https://developers.facebook.com/apps/4388603488126290/roles/test-users/
+   Click "Add" button
+   Create a test user
+   Use this test account to log in
+
+3️⃣  TEST LOGIN
+   Run: php artisan serve
+   Visit: http://localhost:8000
+   Click "Continue with Facebook"
+   Log in with test user
+   ✅ Should work!
+
+🔧 CODE CHANGES MADE
+----------------------
+✅ Updated FacebookService.php - simplified permissions
+✅ Updated FacebookController.php - explicit email permission
+✅ Updated .env - fixed APP_URL to http://localhost:8000
+✅ Cleared config cache
+
+📚 DETAILED GUIDES
+-------------------
+• Quick Summary: FACEBOOK_FIX_SUMMARY.md
+• Full Guide: FACEBOOK_SETUP_FIX.md
+• Config Checker: ./check-facebook-config.sh
+
+💡 WHY THIS HAPPENS
+--------------------
+Your Facebook app is in "Development Mode" which means:
+- Only test users can log in
+- Your personal account needs to be added as test user
+- OR switch app to "Live Mode" (requires app review)
+
+🆘 STILL NOT WORKING?
+----------------------
+1. Check logs: storage/logs/laravel.log
+2. Run checker: ./check-facebook-config.sh
+3. Verify redirect URLs are exactly as shown above
+4. Make sure you're using a test user account
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  Next: Click the link in step 1️⃣  and add the redirect URLs (30 seconds)   ║
+╚══════════════════════════════════════════════════════════════════════════════╝

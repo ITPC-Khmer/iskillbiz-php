@@ -33,7 +33,11 @@ class FacebookController extends Controller
     public function login()
     {
         try {
-            $loginUrl = $this->facebookService->getLoginUrl(route('facebook.facebook_login_back'));
+            // Request only 'email' permission - 'public_profile' is granted by default
+            $loginUrl = $this->facebookService->getLoginUrl(
+                route('facebook.facebook_login_back'),
+                ['email']
+            );
             return redirect()->away($loginUrl);
         } catch (\Exception $e) {
             $this->facebookService->logError($e, 'login()');
