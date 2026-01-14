@@ -33,6 +33,11 @@ class FacebookController extends Controller
     public function login()
     {
         try {
+            // Ensure session is started
+            if (!session()->isStarted()) {
+                session()->start();
+            }
+
             // Get user ID if logged in (for connecting account), null for new login
             $userId = Auth::check() ? (string) Auth::id() : null;
 
@@ -55,7 +60,11 @@ class FacebookController extends Controller
             Log::info('Redirecting to Facebook OAuth', [
                 'user_id' => $userId,
                 'is_connection' => $userId !== null,
+                'session_id' => session()->getId(),
             ]);
+
+            // Save session before redirect
+            session()->save();
 
             return redirect()->away($loginUrl);
         } catch (\Exception $e) {

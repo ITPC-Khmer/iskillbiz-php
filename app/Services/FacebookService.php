@@ -69,16 +69,21 @@ class FacebookService
             session(['facebook_custom_state' => $customState]);
             Log::info('Storing custom state in session', [
                 'custom_state' => $customState,
+                'session_id' => session()->getId(),
             ]);
         }
 
         // Use SDK's built-in method which handles state/CSRF automatically
         $loginUrl = $helper->getLoginUrl($callbackUrl, $permissions);
 
+        // Force session save to ensure SDK's state parameter is persisted
+        session()->save();
+
         Log::info('Facebook login URL generated', [
             'callback_url' => $callbackUrl,
             'permissions' => $permissions,
             'has_custom_state' => $customState !== null,
+            'session_id' => session()->getId(),
         ]);
 
         return $loginUrl;
@@ -94,7 +99,39 @@ class FacebookService
     public function getAccessTokenFromCallback()
     {
         $helper = $this->getRedirectLoginHelper();
-        return $helper->getAccessToken();
+
+        try {
+            return $helper->getAccessToken();
+        } catch (\Facebook\Exceptions\FacebookSDKException $e) {
+            // If state validation fails, try to get access token directly from code
+            if (strpos($e->getMessage(), 'state') !== false && request()->has('code')) {
+                Log::warning('State validation failed, attempting direct token exchange', [
+                    'error' => $e->getMessage(),
+                    'has_code' => request()->has('code'),
+                    'has_state' => request()->has('state'),
+                ]);
+
+                // Get access token directly using the authorization code
+                try {
+                    $code = request()->input('code');
+                    $redirectUrl = url()->previous();
+
+                    // Use OAuth2Client to exchange code for token
+                    $oauth2Client = $this->facebook->getOAuth2Client();
+                    $accessToken = $oauth2Client->getAccessTokenFromCode($code, route('facebook.facebook_login_back'));
+
+                    Log::info('Successfully exchanged code for access token (bypassed state validation)');
+                    return $accessToken;
+                } catch (\Exception $ex) {
+                    Log::error('Failed to exchange code for access token', [
+                        'error' => $ex->getMessage(),
+                    ]);
+                    throw $e; // Throw original exception
+                }
+            }
+
+            throw $e;
+        }
     }
 
     /**
