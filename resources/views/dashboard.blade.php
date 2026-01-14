@@ -252,21 +252,6 @@
                             </div>
                         </div>
                     @endif
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;">
-                        <div style="padding: 15px; background: var(--light-bg); border-radius: 8px;">
-                            <p style="color: #64748b; margin: 0; font-size: 12px;">Total Earnings</p>
-                            <h4 style="font-weight: 700; margin: 5px 0 0 0; color: var(--primary-color);">$4,250</h4>
-                        </div>
-                        <div style="padding: 15px; background: var(--light-bg); border-radius: 8px;">
-                            <p style="color: #64748b; margin: 0; font-size: 12px;">Rating</p>
-                            <h4 style="font-weight: 700; margin: 5px 0 0 0; color: var(--primary-color);">4.9 ★</h4>
-                        </div>
-                    </div>
-
-                    <button style="width: 100%; padding: 12px; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
-                        <i class="fas fa-edit"></i> Edit Profile
-                    </button>
                 </div>
             </div>
         </div>
