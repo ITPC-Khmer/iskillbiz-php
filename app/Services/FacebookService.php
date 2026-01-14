@@ -46,9 +46,11 @@ class FacebookService
 
     /**
      * Get Facebook login URL with permissions.
+     * Uses Facebook SDK's helper to properly manage state/CSRF tokens.
      *
      * @param string $callbackUrl
      * @param array $permissions
+     * @param string|null $customState Custom state to embed (e.g., user ID)
      * @return string
      */
     public function getLoginUrl(string $callbackUrl, array $permissions = ['email',
@@ -58,27 +60,28 @@ class FacebookService
         'pages_manage_posts',
         'pages_read_user_content',
         'pages_messaging',
-        'pages_messaging_subscriptions'], ?string $state = null): string
+        'pages_messaging_subscriptions'], ?string $customState = null): string
     {
-        $graphVersion = config('services.facebook.graph_version', 'v18.0');
-        $graphVersion = str_starts_with($graphVersion, 'v') ? $graphVersion : 'v' . $graphVersion;
-        $scopes = implode(',', $permissions);
-//        dd([
-//            'client_id' => config('services.facebook.app_id'),
-//            'redirect_uri' => $callbackUrl,
-//            'scope' => $scopes,
-//            'response_type' => 'code',
-//            'state' => $state,
-//        ]);
-        $query = http_build_query([
-            'client_id' => config('services.facebook.app_id'),
-            'redirect_uri' => $callbackUrl,
-            'scope' => $scopes,
-            'response_type' => 'code',
-            'state' => $state,
-        ], '', '&', PHP_QUERY_RFC3986);
+        $helper = $this->getRedirectLoginHelper();
 
-        return sprintf('https://www.facebook.com/%s/dialog/oauth?%s', $graphVersion, $query);
+        // Store custom state in session for retrieval after callback
+        if ($customState !== null) {
+            session(['facebook_custom_state' => $customState]);
+            Log::info('Storing custom state in session', [
+                'custom_state' => $customState,
+            ]);
+        }
+
+        // Use SDK's built-in method which handles state/CSRF automatically
+        $loginUrl = $helper->getLoginUrl($callbackUrl, $permissions);
+
+        Log::info('Facebook login URL generated', [
+            'callback_url' => $callbackUrl,
+            'permissions' => $permissions,
+            'has_custom_state' => $customState !== null,
+        ]);
+
+        return $loginUrl;
     }
 
     /**
@@ -92,6 +95,25 @@ class FacebookService
     {
         $helper = $this->getRedirectLoginHelper();
         return $helper->getAccessToken();
+    }
+
+    /**
+     * Get custom state stored before redirect (e.g., user ID).
+     *
+     * @return string|null
+     */
+    public function getCustomState(): ?string
+    {
+        $customState = session('facebook_custom_state');
+
+        // Clear it from session after retrieval
+        session()->forget('facebook_custom_state');
+
+        Log::info('Retrieved custom state from session', [
+            'custom_state' => $customState,
+        ]);
+
+        return $customState;
     }
 
     /**

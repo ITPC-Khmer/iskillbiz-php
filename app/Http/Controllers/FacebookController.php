@@ -33,18 +33,30 @@ class FacebookController extends Controller
     public function login()
     {
         try {
-            // Request only 'email' permission - 'public_profile' is granted by default
+            // Get user ID if logged in (for connecting account), null for new login
+            $userId = Auth::check() ? (string) Auth::id() : null;
+
+            // Request Facebook permissions
             $loginUrl = $this->facebookService->getLoginUrl(
                 route('facebook.facebook_login_back'),
-                ['email',
+                [
+                    'email',
                     'public_profile',
                     'pages_show_list',
                     'pages_read_engagement',
                     'pages_manage_posts',
                     'pages_read_user_content',
                     'pages_messaging',
-                    'pages_messaging_subscriptions'],auth()->user()->id
+                    'pages_messaging_subscriptions'
+                ],
+                $userId
             );
+
+            Log::info('Redirecting to Facebook OAuth', [
+                'user_id' => $userId,
+                'is_connection' => $userId !== null,
+            ]);
+
             return redirect()->away($loginUrl);
         } catch (\Exception $e) {
             $this->facebookService->logError($e, 'login()');
@@ -59,14 +71,17 @@ class FacebookController extends Controller
      */
     public function callback()
     {
-        // Extract state parameter (contains user ID)
-        $state = request()->input('state');
-        $userId = $state ? (int) $state : null;
+        // Retrieve custom state (user ID) from session (stored before redirect)
+        // Note: We don't use the 'state' query parameter directly because the Facebook SDK
+        // uses its own state parameter for CSRF validation
+        $customState = $this->facebookService->getCustomState();
+        $userId = $customState ? (int) $customState : null;
 
         Log::info('Facebook callback initiated', [
-            'state' => $state,
+            'custom_state' => $customState,
             'user_id_from_state' => $userId,
             'has_code' => request()->has('code'),
+            'has_url_state' => request()->has('state'),
             'query_params' => request()->query(),
         ]);
 
