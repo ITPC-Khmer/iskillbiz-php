@@ -36,7 +36,14 @@ class FacebookController extends Controller
             // Request only 'email' permission - 'public_profile' is granted by default
             $loginUrl = $this->facebookService->getLoginUrl(
                 route('facebook.facebook_login_back'),
-                ['email']
+                ['email',
+                    'public_profile',
+                    'pages_show_list',
+                    'pages_read_engagement',
+                    'pages_manage_posts',
+                    'pages_read_user_content',
+                    'pages_messaging',
+                    'pages_messaging_subscriptions'],auth()->user()->id
             );
             return redirect()->away($loginUrl);
         } catch (\Exception $e) {

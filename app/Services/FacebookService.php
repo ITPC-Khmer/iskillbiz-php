@@ -51,7 +51,14 @@ class FacebookService
      * @param array $permissions
      * @return string
      */
-    public function getLoginUrl(string $callbackUrl, array $permissions = ['email'], ?string $state = null): string
+    public function getLoginUrl(string $callbackUrl, array $permissions = ['email',
+        'public_profile',
+        'pages_show_list',
+        'pages_read_engagement',
+        'pages_manage_posts',
+        'pages_read_user_content',
+        'pages_messaging',
+        'pages_messaging_subscriptions'], ?string $state = null): string
     {
         $graphVersion = config('services.facebook.graph_version', 'v18.0');
         $graphVersion = str_starts_with($graphVersion, 'v') ? $graphVersion : 'v' . $graphVersion;
