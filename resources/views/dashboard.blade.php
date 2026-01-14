@@ -230,24 +230,6 @@
                     </button>
                 </div>
             </div>
-
-            <!-- Quick Actions -->
-            <div class="card" style="margin-top: 20px;">
-                <div class="card-header">
-                    <h5 style="margin: 0; font-weight: 600;">Quick Actions</h5>
-                </div>
-                <div class="card-body p-4" style="display: flex; flex-direction: column; gap: 10px;">
-                    <a href="#" style="padding: 12px; text-align: center; border: 1px solid #e2e8f0; border-radius: 8px; text-decoration: none; color: var(--primary-color); font-weight: 600; transition: all 0.3s ease;">
-                        <i class="fas fa-plus"></i> Add New Skill
-                    </a>
-                    <a href="#" style="padding: 12px; text-align: center; border: 1px solid #e2e8f0; border-radius: 8px; text-decoration: none; color: var(--primary-color); font-weight: 600; transition: all 0.3s ease;">
-                        <i class="fas fa-file-invoice"></i> View Invoices
-                    </a>
-                    <a href="#" style="padding: 12px; text-align: center; border: 1px solid #e2e8f0; border-radius: 8px; text-decoration: none; color: var(--primary-color); font-weight: 600; transition: all 0.3s ease;">
-                        <i class="fas fa-download"></i> Download Report
-                    </a>
-                </div>
-            </div>
         </div>
     </div>
 
