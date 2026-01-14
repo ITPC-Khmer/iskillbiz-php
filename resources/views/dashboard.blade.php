@@ -296,10 +296,13 @@
                                 </div>
 
                                 <div style="display: flex; gap: 5px;">
-                                    <a href="https://facebook.com/{{ $page['id'] }}" target="_blank" style="flex: 1; text-align: center; padding: 8px; background: #1877f2; color: white; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600; transition: all 0.3s ease;">
-                                        <i class="fab fa-facebook-f"></i> View Page
+                                    <a href="{{ route('facebook.page.show', $page['id']) }}" style="flex: 1; text-align: center; padding: 8px; background: #1877f2; color: white; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600; transition: all 0.3s ease;">
+                                        <i class="fas fa-comment-alt"></i> Inbox
                                     </a>
-                                    <button onclick="copyToClipboard('{{ $page['id'] }}')" style="padding: 8px 12px; background: #f3f4f6; color: #64748b; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.3s ease;">
+                                    <a href="https://facebook.com/{{ $page['id'] }}" target="_blank" title="View on Facebook" style="padding: 8px 12px; background: #f3f4f6; color: #64748b; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; text-decoration: none; transition: all 0.3s ease;">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                    <button onclick="copyToClipboard('{{ $page['id'] }}')" title="Copy Page ID" style="padding: 8px 12px; background: #f3f4f6; color: #64748b; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.3s ease;">
                                         <i class="fas fa-copy"></i>
                                     </button>
                                 </div>

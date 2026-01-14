@@ -536,4 +536,133 @@ class FacebookService
             throw $e;
         }
     }
+
+    /**
+     * Get conversations for a page.
+     *
+     * @param string $pageId
+     * @param string $pageAccessToken
+     * @return array
+     * @throws \Exception
+     */
+    public function getConversations($pageId, $pageAccessToken): array
+    {
+        try {
+            $url = "https://graph.facebook.com/v18.0/{$pageId}/conversations";
+            $params = [
+                'fields' => 'id,updated_time,snippet,unread_count,participants,can_reply',
+                'access_token' => $pageAccessToken,
+                'limit' => 50,
+                'appsecret_proof' => hash_hmac('sha256', $pageAccessToken, config('services.facebook.app_secret')),
+            ];
+
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->get($url, ['query' => $params]);
+            $data = json_decode((string)$response->getBody(), true);
+
+            if (isset($data['error'])) {
+                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+            }
+
+            return $data['data'] ?? [];
+        } catch (\Exception $e) {
+            Log::error('Failed to get page conversations', [
+                'error' => $e->getMessage(),
+                'page_id' => $pageId,
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Get messages for a conversation.
+     *
+     * @param string $conversationId
+     * @param string $pageAccessToken
+     * @return array
+     * @throws \Exception
+     */
+    public function getMessages($conversationId, $pageAccessToken): array
+    {
+        try {
+            $url = "https://graph.facebook.com/v18.0/{$conversationId}/messages";
+            $params = [
+                'fields' => 'id,message,created_time,from,attachments,sticker',
+                'access_token' => $pageAccessToken,
+                'limit' => 50,
+                'order' => 'desc', // Newest first
+                'appsecret_proof' => hash_hmac('sha256', $pageAccessToken, config('services.facebook.app_secret')),
+            ];
+
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->get($url, ['query' => $params]);
+            $data = json_decode((string)$response->getBody(), true);
+
+            if (isset($data['error'])) {
+                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+            }
+
+            return $data['data'] ?? [];
+        } catch (\Exception $e) {
+            Log::error('Failed to get conversation messages', [
+                'error' => $e->getMessage(),
+                'conversation_id' => $conversationId,
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Send a message from a page.
+     *
+     * @param string $pageId
+     * @param string $recipientId
+     * @param string $messageText
+     * @param string $pageAccessToken
+     * @return array
+     * @throws \Exception
+     */
+    public function sendMessage($pageId, $recipientId, $messageText, $pageAccessToken): array
+    {
+        try {
+            $url = "https://graph.facebook.com/v18.0/{$pageId}/messages";
+            $body = [
+                'recipient' => ['id' => $recipientId],
+                'message' => ['text' => $messageText],
+                'access_token' => $pageAccessToken,
+                'appsecret_proof' => hash_hmac('sha256', $pageAccessToken, config('services.facebook.app_secret')),
+            ];
+
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 15,
+                'connect_timeout' => 10,
+            ]);
+
+            $response = $client->post($url, [
+                'json' => $body
+            ]);
+            $data = json_decode((string)$response->getBody(), true);
+
+            if (isset($data['error'])) {
+                 throw new \Exception($data['error']['message'] ?? 'Unknown Facebook error');
+            }
+
+            return $data;
+        } catch (\Exception $e) {
+            Log::error('Failed to send message', [
+                'error' => $e->getMessage(),
+                'page_id' => $pageId,
+                'recipient_id' => $recipientId,
+            ]);
+            throw $e;
+        }
+    }
 }

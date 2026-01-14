@@ -104,7 +104,16 @@ Route::middleware('auth')->prefix('facebook')->group(function () {
 // Dashboard Routes
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Facebook Page & Chat Routes
+    Route::prefix('facebook')->name('facebook.')->group(function () {
+        Route::get('/page/{pageId}', [App\Http\Controllers\FacebookPageController::class, 'show'])->name('page.show');
+        Route::post('/page/{pageId}/sync', [App\Http\Controllers\FacebookPageController::class, 'syncMessages'])->name('page.sync');
+        Route::get('/conversation/{id}', [App\Http\Controllers\FacebookPageController::class, 'getConversation'])->name('conversation.get');
+        Route::post('/conversation/{id}/send', [App\Http\Controllers\FacebookPageController::class, 'sendMessage'])->name('conversation.send');
+        Route::post('/conversation/{id}/labels', [App\Http\Controllers\FacebookPageController::class, 'updateLabels'])->name('conversation.labels');
+        Route::post('/conversations/bulk-labels', [App\Http\Controllers\FacebookPageController::class, 'bulkAssignLabels'])->name('conversations.bulk_labels');
+        Route::post('/labels', [App\Http\Controllers\FacebookPageController::class, 'createLabel'])->name('labels.create');
+    });
 });
-
-
 
