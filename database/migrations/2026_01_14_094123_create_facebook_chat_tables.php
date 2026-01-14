@@ -43,7 +43,7 @@ return new class extends Migration
             $table->text('message')->nullable();
             $table->json('attachments')->nullable();
             $table->timestamp('created_time')->nullable();
-            $table->string('sticker')->nullable(); // For stickers
+            $table->text('sticker')->nullable(); // For stickers
             $table->timestamps();
         });
 
