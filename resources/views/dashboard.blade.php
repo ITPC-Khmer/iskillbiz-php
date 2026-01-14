@@ -10,32 +10,7 @@
 
     <!-- Stats Row -->
     <div class="row mb-30" style="margin-bottom: 30px;">
-        @if(Auth::user()->isConnectedToFacebook() && Auth::user()->hasFacebookPages())
-        <div class="col-md-6 col-lg-3 mb-3">
-            <div class="card" style="border-left: 3px solid #1877f2;">
-                <div class="card-body p-4">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <div>
-                            <p style="color: #64748b; margin: 0; font-size: 14px;">Facebook Pages</p>
-                            <h3 style="font-size: 28px; font-weight: 700; margin: 5px 0 0 0; color: var(--dark-bg);">{{ count(Auth::user()->getFacebookPages()) }}</h3>
-                        </div>
-                        <div style="width: 50px; height: 50px; background: rgba(24, 119, 242, 0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #1877f2;">
-                            <i class="fab fa-facebook"></i>
-                        </div>
-                    </div>
-                    @if(Auth::user()->hasFacebookToken() && !Auth::user()->isFacebookTokenExpired())
-                        <div style="margin-top: 10px; font-size: 11px; color: #10b981;">
-                            <i class="fas fa-check-circle"></i> Token valid
-                        </div>
-                    @else
-                        <div style="margin-top: 10px; font-size: 11px; color: #dc2626;">
-                            <i class="fas fa-exclamation-triangle"></i> Token expired
-                        </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-        @endif
+
 
         <div class="col-md-6 col-lg-3 mb-3">
             <div class="card">
